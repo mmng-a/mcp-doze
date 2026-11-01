@@ -34,3 +34,11 @@ Five additional tests cover automatic first collection, warm reuse, entrypoint u
 In isolated Codex checks, the installed legacy REPL worked through the wrapper from two working directories. Xcode workspace discovery worked in one context, but in another the wrapper received an agent-approval error while direct connection succeeded. Xcode was therefore left directly connected rather than changing its approvals. The error text was visible through the wrapper.
 
 A bundled Computer Use replacement retained tool names but lost its plugin provenance in host metadata (`pluginId` became null). On-use authentication and plugin hooks were not established as equivalent. App-managed plugin connections were kept unchanged.
+
+## Plugin transport integration and Xcode approval (0.1.2)
+
+The Codex synchronization tests check metadata preservation, unchanged HTTP/disabled entries, idempotence, new plugin versions, private backups and rejection of symlink manifests before writes. The adapter changes transport command/arguments inside the installed plugin rather than adding top-level MCP registrations.
+
+In an independent Codex app-server with the existing plugin installations, Unified Computer Use, Data Analytics and Creative Production retained their plugin identifiers and ON_INSTALL/ON_USE authentication policies. All three real backends stayed stopped after catalog discovery. Harmless JavaScript, a bundled Data workflow search, and reading Creative Production's bundled UI resource each started the corresponding backend on first use and returned successfully. Owned processes stopped after archiving the test thread and closing its isolated app-server. Plugin hook definitions were unchanged; the host's visible hook set matched its baseline.
+
+Xcode identifies the immediate parent of `mcpbridge` by its signature. After signing doze with a stable identifier and approving that agent through Xcode's official flow, read-only workspace listing succeeded through Codex from both tested working directories. No real workspace was opened. Reinstalling the wrapper requires reapplying the same signing identity.

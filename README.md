@@ -106,9 +106,37 @@ The wrapper does not manage OAuth credentials, login sessions or a separate cred
 
 A cached catalog does **not** mean authentication has been checked. A stdio server can reject authentication when it first starts or when a tool is used. JSON-RPC initialization/discovery errors, including their codes and reasons, are returned to the host; normal tool errors are forwarded unchanged. Authentication failures and tool results are not cached, and operations are not automatically retried. A host's MCP status indicator may still report stdio authentication as unsupported rather than maintain a live signed-in indicator.
 
-Some native providers can also treat the wrapper as a different agent. In local Xcode verification, a direct workspace lookup succeeded where the wrapped connection was not approved. Keep the direct connection until the provider's approval flow has been verified; do not bypass its access checks.
+Some native providers treat the wrapper as a different agent. Xcode identifies the immediate parent of `mcpbridge` by its code signature. Sign the installed wrapper with a stable signing identity and identifier, then approve that agent through Xcode's normal flow:
 
-App-managed plugin identity, on-use authentication and hooks can be lost when converting a bundled MCP into a top-level registration. The wrapper does not make that conversion automatically; keep such connections unchanged unless host integration is verified.
+```sh
+codesign --force --sign "YOUR_CODE_SIGNING_IDENTITY" \
+  --identifier io.github.mmng-a.mcp-doze --timestamp=none /absolute/path/to/mcp-doze
+```
+
+Use `security find-identity -v -p codesigning` to find an existing identity. Re-sign after replacing the binary, keeping the same identity and identifier. `XcodeListWorkspaces` can report an approval error without requesting access; `XcodeOpenWorkspace` requests access and, when allowed, opens the specified workspace. Use the workspace you intend to work on. For headless Xcode, inspect `xcrun mcp-server status` and approve the specific pending request through the official command. The wrapper does not change Xcode's approval database.
+
+## Codex plugin integration
+
+Keep MCPs inside their original plugins so Codex retains plugin identity, authentication policy, skills and hooks. Do not move bundled servers to top-level MCP registrations. To wrap installed plugin launch definitions in place:
+
+```sh
+mcp-doze codex sync-plugins
+# For a different Codex home:
+mcp-doze codex sync-plugins --codex-home /absolute/path/to/codex-home
+```
+
+This explicit command scans `plugins/cache/<marketplace>/<plugin>/<version>/.mcp.json` under `CODEX_HOME` (default `~/.codex`). It changes only `command` and `args` for enabled stdio definitions, preserving every other field. HTTP and explicitly disabled servers are left alone. CUA receives the verified `--repl-cleanup` policy. Existing wrapped definitions are unchanged. Private backups are written under `backups/mcp-doze/plugins` in the same Codex home; they are never loaded as configuration. No registration list is maintained by doze.
+
+Run synchronization before starting Codex, including after plugin updates. A small launcher earlier on `PATH` can make this automatic:
+
+```sh
+#!/bin/sh
+set -eu
+/absolute/path/to/mcp-doze codex sync-plugins >/dev/null
+exec /absolute/path/to/the/real/codex "$@"
+```
+
+Use distinct paths for this launcher and the real Codex binary. Synchronization errors stop the launcher with a diagnostic rather than silently starting eager backends. Plugin installation or updates can replace cached definitions; synchronization reapplies wrapping on the next launch. An already running Codex app-server can retain old launch definitions, so existing connections remain in effect until that server exits. The integration does not restart it or interrupt existing work.
 
 ## Lifetime and cleanup
 
@@ -138,6 +166,7 @@ cargo test --locked
 cargo build --locked
 python3 tests/test_e2e.py --binary target/debug/mcp-doze -v
 python3 tests/test_auto.py --binary target/debug/mcp-doze -v
+python3 tests/test_codex.py --binary target/debug/mcp-doze -v
 cargo build --release --locked
 ```
 

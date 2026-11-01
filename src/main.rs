@@ -2,6 +2,7 @@
 
 mod auto;
 mod cache;
+mod codex;
 mod config;
 mod process;
 mod relay;
@@ -12,7 +13,7 @@ use config::Launch;
 use std::{env, ffi::OsString, path::PathBuf, time::Duration};
 
 const HELP: &str = "mcp-doze — start each stdio MCP server on first use\n\n\
-Usage:\n  mcp-doze run [OPTIONS] -- COMMAND [ARG...]\n  \
+Usage:\n  mcp-doze codex sync-plugins [--codex-home PATH]\n  mcp-doze run [OPTIONS] -- COMMAND [ARG...]\n  \
 mcp-doze cache refresh [OPTIONS] -- COMMAND [ARG...]\n  \
 mcp-doze cache inspect [OPTIONS] -- COMMAND [ARG...]\n\n\
 Options:\n  --cache-dir PATH       Cache directory (default: OS user cache)\n  \
@@ -125,6 +126,9 @@ fn main() {
         return;
     }
     let result = (|| -> Result<()> {
+        if first.as_deref().is_some_and(|s| s == "codex") {
+            return codex::command(env::args_os().skip(2));
+        }
         let (mode, launch) = parse()?;
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
