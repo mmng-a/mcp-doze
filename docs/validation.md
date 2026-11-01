@@ -41,9 +41,11 @@ No desktop windows, browser tabs or screenshots were operated during these check
 
 Cold release-build physical-footprint samples were 1.563 MiB for the legacy REPL launch definition and 1.641 MiB for Unified Computer Use. These measure doze while its backend is absent on the tested Mac. They do not measure memory while executing tools and are not guaranteed limits.
 
-## Homebrew preparation
+## Homebrew distribution
 
-The Formula is a template for a future tagged source archive. Syntax and its local installation-test logic can be checked before publication. A complete `brew install` test still requires the real release URL and SHA-256, so it is a separate publication step in the [Homebrew guide](homebrew.md).
+On 2026-11-01, the public `mmng-a/tap/mcp-doze` Formula was checked with Homebrew 7.0.11 on Apple Silicon macOS. `brew style`, `brew audit --strict`, a build-from-source installation of the `v0.1.2` tag archive, and `brew test` all passed. The downloaded source archive matched the Formula's SHA-256. The installed package's test verified its version and plugin-definition wrapping under a temporary Codex home.
+
+The repository retains a Formula template for future releases. Update the version and archive checksum, then repeat the installation checks in the [Homebrew guide](homebrew.md).
 
 ## References
 

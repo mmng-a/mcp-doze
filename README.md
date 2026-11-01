@@ -10,6 +10,16 @@ MCP clients can start every configured stdio server just to discover its tools. 
 
 ## Install
 
+### Homebrew (macOS)
+
+```sh
+brew install mmng-a/tap/mcp-doze
+```
+
+The [tap](https://github.com/mmng-a/homebrew-tap) builds from source; Homebrew provides Rust as a build dependency. See the [packaging guide](docs/homebrew.md) for release maintenance.
+
+### From source
+
 Requires Rust 1.85 or later to build. macOS is the tested platform; the implementation uses Unix APIs. Windows is not supported. The installed executable does not require Rust, Node.js or Python to run; the MCP server you wrap has its own requirements.
 
 ```sh
@@ -17,8 +27,6 @@ git clone https://github.com/mmng-a/mcp-doze.git
 cd mcp-doze
 cargo install --path . --locked
 ```
-
-Homebrew distribution is being prepared. The [packaging guide](docs/homebrew.md) and [Formula template](packaging/homebrew/mcp-doze.rb.in) describe publication; a public tap is not available yet.
 
 ## Quick start
 

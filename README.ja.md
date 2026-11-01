@@ -10,6 +10,16 @@ MCPクライアントは、ツール一覧を取得するために、登録さ�
 
 ## インストール
 
+### Homebrew（macOS）
+
+```sh
+brew install mmng-a/tap/mcp-doze
+```
+
+[公開tap](https://github.com/mmng-a/homebrew-tap)からソースをビルドします。ビルドに必要なRustはHomebrewが導入します。配布側の更新手順は[配布手順](docs/homebrew.md)を参照してください。
+
+### ソースからビルド
+
 ビルドにはRust 1.85以降が必要です。検証済みの環境はmacOSで、実装にはUnix APIを使用しています。Windowsには対応していません。インストール後の実行にはRust・Node.js・Pythonは不要です。中継するMCPサーバーには、そのサーバー自身の実行環境が必要です。
 
 ```sh
@@ -17,8 +27,6 @@ git clone https://github.com/mmng-a/mcp-doze.git
 cd mcp-doze
 cargo install --path . --locked
 ```
-
-Homebrew配布は準備中です。[配布手順](docs/homebrew.md)と[Formulaのテンプレート](packaging/homebrew/mcp-doze.rb.in)を用意していますが、公開済みのtapはまだありません。
 
 ## 使い方
 
