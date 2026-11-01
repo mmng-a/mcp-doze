@@ -12,5 +12,6 @@ pub struct Launch {
     pub cache_env: Vec<String>,
     pub fingerprints: Vec<PathBuf>,
     pub repl_cleanup: bool,
+    pub auto_refresh: bool,
     pub timeout: Duration,
 }

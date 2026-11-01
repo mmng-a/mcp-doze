@@ -28,3 +28,11 @@ Discovery collection advertises no optional client capabilities and cannot satis
 The cache identity does not attempt to fingerprint every inherited environment variable or every loaded dependency. Selected variables and explicit file fingerprints let the host's existing launch definition express the relevant context. Live validation before the first operation catches changes in the actual initialization and catalog.
 
 The wrapper is responsible for its owned Unix group, not processes that detach or applications reached through external services. Final group KILL may terminate the wrapper too. This avoids a persistent process monitor and makes TERM-resistant descendants recoverable.
+
+## Automatic collection
+
+`--auto-refresh` is an explicit run-time option; manual strict mode remains available. A missing, invalid or changed snapshot is collected under a per-identity lock. Concurrent starters check the completed cache after acquiring that lock rather than duplicate the collector. No execution results or credentials are saved.
+
+A short-lived invocation of the same binary owns the collector's process group and monitors an ownership pipe. EOF on that pipe triggers group recovery even if its parent was killed. The outer connection remains responsive to host disconnects while collection is pending. This helper exists only during collection and does not become a daemon. The host receives cached discovery after collection has ended.
+
+Upstream initialization/discovery JSON-RPC errors travel over the private helper pipe and are returned with the host's request IDs. A warm cached connection likewise receives the upstream reason if live initialization fails before its operation. The error is not added to the discovery cache.

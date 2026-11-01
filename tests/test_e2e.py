@@ -327,6 +327,20 @@ class EndToEnd(unittest.TestCase):
             changed.initialize()
         self.assertEqual(self.starts(), [])
 
+    def test_initialization_auth_error_reaches_host_after_cached_discovery(self):
+        self.refresh()
+        self.write_control(initialize_error={"code": -32001, "message": "fixture authorization required",
+                                             "data": {"login_url": "https://example.invalid/login"}})
+        client = self.client()
+        client.initialize()
+        with self.assertRaisesRegex(MCPError, "fixture authorization required") as failure:
+            client.tool("increment")
+        self.assertIn("-32001", str(failure.exception))
+        self.assertIn("https://example.invalid/login", str(failure.exception))
+        self.assertEqual(self.operations(), [])
+        for path in self.cache_dir.glob("*.json"):
+            self.assertNotIn("fixture authorization required", path.read_text())
+
     def test_changed_live_catalog_never_executes_operation(self):
         self.refresh()
         self.write_control(catalog_version=2)

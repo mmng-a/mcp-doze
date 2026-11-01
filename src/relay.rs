@@ -1,4 +1,5 @@
 use crate::{
+    auto,
     cache::{self, Cache, CacheLock},
     config::Launch,
     process::{self, Group},
@@ -13,30 +14,53 @@ use std::{
     process::ExitStatus,
 };
 use tokio::{
-    io::BufReader,
+    io::{AsyncReadExt, BufReader},
     process::{Child, ChildStdin},
     signal::unix::{Signal, SignalKind, signal},
     sync::mpsc,
     time::{Instant, sleep_until},
 };
 
-struct Signals {
+pub(crate) struct Signals {
     term: Signal,
     interrupt: Signal,
     hangup: Signal,
+    disconnect: Option<mpsc::Receiver<()>>,
 }
 impl Signals {
-    fn new() -> Result<Self> {
+    fn new(managed: bool) -> Result<Self> {
+        let disconnect = if managed {
+            let (tx, rx) = mpsc::channel(1);
+            tokio::spawn(async move {
+                let mut input = tokio::io::stdin();
+                let mut byte = [0u8; 1];
+                while matches!(input.read(&mut byte).await, Ok(n) if n > 0) {}
+                let _ = tx.send(()).await;
+            });
+            Some(rx)
+        } else {
+            None
+        };
         Ok(Self {
             term: signal(SignalKind::terminate())?,
             interrupt: signal(SignalKind::interrupt())?,
             hangup: signal(SignalKind::hangup())?,
+            disconnect,
         })
     }
-    async fn next(&mut self) {
-        tokio::select! { _ = self.term.recv() => {}, _ = self.interrupt.recv() => {}, _ = self.hangup.recv() => {} }
+    pub(crate) async fn next(&mut self) {
+        tokio::select! { _ = self.term.recv() => {}, _ = self.interrupt.recv() => {}, _ = self.hangup.recv() => {}, _ = async { match &mut self.disconnect { Some(rx) => { rx.recv().await; }, None => pending::<()>().await } } => {} }
     }
 }
+
+#[derive(Debug)]
+struct Rejected(Value);
+impl std::fmt::Display for Rejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("backend rejected initialization or discovery")
+    }
+}
+impl std::error::Error for Rejected {}
 
 fn result(id: &Value, value: Value) -> Value {
     json!({"jsonrpc":"2.0","id":id,"result":value})
@@ -130,8 +154,8 @@ async fn receive<R: tokio::io::AsyncBufRead + Unpin>(
             frame = wire::read(reader) => frame?.context("MCP closed during discovery")?,
         };
         if frame.value.get("method").is_none() && frame.value.get("id") == Some(id) {
-            if frame.value.get("error").is_some() {
-                bail!("MCP rejected discovery request");
+            if let Some(error) = frame.value.get("error") {
+                return Err(Rejected(error.clone()).into());
             }
             return frame
                 .value
@@ -155,10 +179,24 @@ async fn receive<R: tokio::io::AsyncBufRead + Unpin>(
     }
 }
 
-pub async fn refresh(launch: &Launch) -> Result<()> {
-    let _lock = CacheLock::acquire(launch)?;
-    let mut signals = Signals::new()?;
-    let mut group = Group::collector();
+pub async fn refresh(launch: &Launch, managed: bool) -> Result<()> {
+    let mut signals = Signals::new(managed)?;
+    let settings = launch.clone();
+    let locking = tokio::task::spawn_blocking(move || CacheLock::acquire(&settings));
+    let _lock = tokio::select! {
+        _ = signals.next() => bail!("cache collection cancelled"),
+        _ = tokio::time::sleep(launch.timeout) => bail!("cache refresh lock timed out"),
+        lock = locking => lock.context("cache lock worker stopped")??,
+    };
+    if managed && cache::load(launch).is_ok() {
+        return Ok(());
+    }
+    let identity = cache::identity(launch)?;
+    let mut group = if managed {
+        Group::wrapper()?
+    } else {
+        Group::collector()
+    };
     let mut child = process::spawn(launch, &mut group).await?;
     let mut input = child.stdin.take().context("backend stdin unavailable")?;
     let mut reader = BufReader::new(child.stdout.take().context("backend stdout unavailable")?);
@@ -197,22 +235,42 @@ pub async fn refresh(launch: &Launch) -> Result<()> {
         }
         Ok(Cache {
             format: cache::FORMAT,
-            identity: cache::identity(launch)?,
+            identity,
             initialize,
             lists,
         })
     }
     .await;
     drop(input);
-    // No cache is published until its collector and descendants have stopped.
-    group.terminate(Some(&mut child)).await?;
-    let cached = collected?;
-    if launch.repl_cleanup && !repl_schema(&cached) {
-        bail!("--repl-cleanup requires the verified turn_ended schema");
+    let publish = || -> Result<()> {
+        let cached = collected?;
+        if launch.repl_cleanup && !repl_schema(&cached) {
+            bail!("--repl-cleanup requires the verified turn_ended schema");
+        }
+        cache::save(launch, &cached)?;
+        eprintln!("mcp-doze: discovery cache refreshed");
+        Ok(())
+    };
+    if managed {
+        let outcome = publish();
+        if let Err(error) = &outcome {
+            if let Some(rejected) = error.downcast_ref::<Rejected>() {
+                wire::send(
+                    &mut tokio::io::stdout(),
+                    &json!({"jsonrpc":"2.0","id":"mcp-doze-bootstrap-error","error":rejected.0}),
+                    launch.timeout,
+                )
+                .await?;
+            }
+            eprintln!("mcp-doze: {error:#}");
+        }
+        // The caller waits for this group to stop before exposing the cache.
+        group.terminate(Some(&mut child)).await?;
+        outcome
+    } else {
+        group.terminate(Some(&mut child)).await?;
+        publish()
     }
-    cache::save(launch, &cached)?;
-    eprintln!("mcp-doze: discovery cache refreshed");
-    Ok(())
 }
 
 fn repl_schema(cache: &Cache) -> bool {
@@ -327,13 +385,26 @@ async fn expired(deadline: Option<Instant>) {
 }
 
 pub async fn run(launch: &Launch) -> Result<()> {
-    let cached = cache::load(launch).context(
-        "cache unavailable; run cache refresh with the same options and backend command",
-    )?;
+    let mut signals = Signals::new(false)?;
+    let (client_tx, mut client_rx) = mpsc::channel(1);
+    tokio::spawn(wire::pump(BufReader::new(tokio::io::stdin()), client_tx));
+    let (cached, prefetched) =
+        match cache::load(launch) {
+            Ok(cache) => (cache, VecDeque::new()),
+            Err(_) if launch.auto_refresh => {
+                let Some(collected) = auto::bootstrap(launch, &mut client_rx, &mut signals).await?
+                else {
+                    return Ok(());
+                };
+                collected
+            }
+            Err(error) => return Err(error).context(
+                "cache unavailable; run cache refresh with the same options and backend command",
+            ),
+        };
     if launch.repl_cleanup && !repl_schema(&cached) {
         bail!("cache does not contain the verified REPL cleanup contract");
     }
-    let mut signals = Signals::new()?;
     let mut group = Group::wrapper()?;
     let mut child = None;
     let mut input = None;
@@ -344,6 +415,7 @@ pub async fn run(launch: &Launch) -> Result<()> {
         &mut group,
         &mut child,
         &mut input,
+        (&mut client_rx, prefetched),
     )
     .await;
     if let Err(error) = &outcome {
@@ -354,6 +426,17 @@ pub async fn run(launch: &Launch) -> Result<()> {
     outcome
 }
 
+async fn next_client(
+    client: &mut mpsc::Receiver<Result<Option<Frame>>>,
+    prefetched: &mut VecDeque<Frame>,
+) -> Option<Result<Option<Frame>>> {
+    if let Some(frame) = prefetched.pop_front() {
+        Some(Ok(Some(frame)))
+    } else {
+        client.recv().await
+    }
+}
+
 async fn connection(
     launch: &Launch,
     cached: &Cache,
@@ -361,9 +444,9 @@ async fn connection(
     group: &mut Group,
     child: &mut Option<Child>,
     input: &mut Option<ChildStdin>,
+    client: (&mut mpsc::Receiver<Result<Option<Frame>>>, VecDeque<Frame>),
 ) -> Result<()> {
-    let (client_tx, mut client_rx) = mpsc::channel(1);
-    tokio::spawn(wire::pump(BufReader::new(tokio::io::stdin()), client_tx));
+    let (client_rx, mut prefetched) = client;
     let (backend_tx, mut backend_rx) = mpsc::channel(1);
     let mut output = tokio::io::stdout();
     let mut init = None::<Value>;
@@ -377,7 +460,7 @@ async fn connection(
             _ = signals.next() => return Ok(()),
             status = exit(child) => { let _ = status?; bail!("backend exited; state was lost, reconnect explicitly (operation was not retried)"); },
             _ = expired(startup.as_ref().map(|s| s.deadline)) => bail!("backend initialization timed out; operation was not sent"),
-            message = client_rx.recv() => {
+            message = next_client(client_rx, &mut prefetched) => {
                 let Some(frame) = message.context("client reader stopped")?? else { return Ok(()); };
                 let method = frame.value["method"].as_str();
                 if active {
@@ -447,6 +530,14 @@ async fn connection(
                 let expected = startup.as_ref().is_some_and(|s| frame.value.get("method").is_none() && frame.value.get("id") == Some(&s.id));
                 if expected {
                     let stage = startup.as_mut().unwrap();
+                    if let Some(error) = frame.value.get("error") {
+                        for request in &queue {
+                            if let Some(id) = request.value.get("id") {
+                                wire::send(&mut output, &json!({"jsonrpc":"2.0","id":id,"error":error}), launch.timeout).await?;
+                            }
+                        }
+                        bail!("backend rejected initialization or discovery; details returned to client");
+                    }
                     let reply = frame.value.get("result").context("backend rejected initialization or discovery")?;
                     let pipe = input.as_mut().context("backend stdin missing")?;
                     let more = if let Some(method) = &stage.method {

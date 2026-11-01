@@ -1,5 +1,6 @@
 #![cfg(unix)]
 
+mod auto;
 mod cache;
 mod config;
 mod process;
@@ -17,6 +18,7 @@ mcp-doze cache inspect [OPTIONS] -- COMMAND [ARG...]\n\n\
 Options:\n  --cache-dir PATH       Cache directory (default: OS user cache)\n  \
 --cache-env NAME       Include this environment variable in the cache identity\n  \
 --fingerprint PATH     Track an extra script or manifest (repeatable)\n  \
+--auto-refresh         Collect a missing or stale cache automatically\n  \
 --repl-cleanup         Acknowledge the verified REPL turn_ended tool while cold\n  \
 --timeout-ms N         Initialization and I/O timeout (default: 10000)\n  \
 -h, --help             Show help\n  -V, --version          Show version\n\n\
@@ -35,7 +37,7 @@ fn parse() -> Result<(String, Launch)> {
     } else {
         bail!("expected run, cache refresh or cache inspect; use --help");
     };
-    if !["run", "refresh", "inspect"].contains(&mode.as_str()) {
+    if !["run", "refresh", "inspect", "bootstrap"].contains(&mode.as_str()) {
         bail!("unknown subcommand; use --help");
     }
     let cache_dir = if let Some(path) = env::var_os("XDG_CACHE_HOME") {
@@ -57,6 +59,7 @@ fn parse() -> Result<(String, Launch)> {
         cache_env: vec![],
         fingerprints: vec![],
         repl_cleanup: false,
+        auto_refresh: false,
         timeout: Duration::from_secs(10),
     };
     let mut delimiter = false;
@@ -64,6 +67,10 @@ fn parse() -> Result<(String, Launch)> {
         if arg == "--" {
             delimiter = true;
             break;
+        }
+        if arg == "--auto-refresh" {
+            launch.auto_refresh = true;
+            continue;
         }
         if arg == "--repl-cleanup" {
             launch.repl_cleanup = true;
@@ -125,7 +132,8 @@ fn main() {
         let outcome = runtime.block_on(async {
             match mode.as_str() {
                 "run" => relay::run(&launch).await,
-                "refresh" => relay::refresh(&launch).await,
+                "refresh" => relay::refresh(&launch, false).await,
+                "bootstrap" => relay::refresh(&launch, true).await,
                 "inspect" => {
                     let cached = cache::load(&launch)?;
                     println!("{}", serde_json::json!({"cache_file":cache::path(&launch)?,"format":cached.format,"cached_methods":cached.lists.keys().collect::<Vec<_>>(),"protocolVersion":cached.initialize["protocolVersion"],"serverInfo":cached.initialize["serverInfo"]}));

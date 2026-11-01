@@ -25,7 +25,9 @@ The executable is `mcp-doze`. This repository does not install or modify any MCP
 
 ## Use
 
-First, collect the server's discovery information. Run this from the **same working directory and environment** that the MCP client will use:
+Use `--auto-refresh` to collect missing or changed discovery information automatically. The first connection in a new working directory starts a short-lived collector, stops it, and then serves the cached catalog. Later connections stay cold until an operation. The collector is guarded by an ownership pipe so it also cleans up if the wrapper disappears.
+
+To prepare a cache explicitly instead, run from the **same working directory and environment** that the MCP client will use:
 
 ```sh
 mcp-doze cache refresh -- python3 /absolute/path/to/server.py
@@ -36,7 +38,7 @@ Then wrap the existing command in your client's configuration. For example, in C
 ```toml
 [mcp_servers.example]
 command = "/absolute/path/to/mcp-doze"
-args = ["run", "--", "python3", "/absolute/path/to/server.py"]
+args = ["run", "--auto-refresh", "--", "python3", "/absolute/path/to/server.py"]
 ```
 
 Keep the existing environment, working directory, approval settings and tool allowlists in the client configuration. There is no second server configuration file to maintain.
@@ -58,11 +60,12 @@ mcp-doze cache inspect [OPTIONS] -- COMMAND [ARG...]
 --cache-dir PATH       Override the cache directory
 --cache-env NAME       Include an environment variable in the cache identity; repeatable
 --fingerprint PATH     Track an additional script or manifest; repeatable
+--auto-refresh         Collect a missing or changed cache automatically
 --repl-cleanup         Enable the verified REPL turn_ended acknowledgement while cold
 --timeout-ms N         Initialization and I/O timeout, default 10000
 ```
 
-Use the same options and backend command for `refresh`, `inspect` and `run`. Arguments after `--` are passed directly to the real server; no shell is involved.
+Use the same cache context, cleanup policy and backend command for `refresh`, `inspect` and `run`. `--auto-refresh` only affects `run` and is not part of the cache identity. Arguments after `--` are passed directly to the real server; no shell is involved.
 
 The cache identity includes the executable, arguments, cwd, file argument metadata, explicit fingerprints, selected environment values and cleanup policy. Environment variables are inherited unchanged, but only variables named by `--cache-env` affect the cache key. Include variables that change the available tools or instructions. Their values are hashed into the identity and are not stored as plain text.
 
@@ -89,13 +92,23 @@ Default location:
 - Other Unix systems: `~/.cache/mcp-doze`
 - With `XDG_CACHE_HOME`: `$XDG_CACHE_HOME/mcp-doze`
 
-Directories must be owned by the current user with mode `0700`; files must have mode `0600`. A missing, changed, corrupt or inaccessible cache produces an error with a refresh hint. It never silently falls back to eager startup.
+Directories must be owned by the current user with mode `0700`; files must have mode `0600`. A missing, changed, corrupt or inaccessible cache produces an error with a refresh hint. Without `--auto-refresh`, it never falls back to eager startup. With that explicit option, a temporary collector obtains and saves discovery metadata, then stops; the long-lived backend is still started only on use.
 
 Before the first real operation, the wrapper checks the live server's initialization and complete discovery results against the snapshot. A mismatch invalidates the snapshot and stops before sending the operation. Live list-change notifications are forwarded and invalidate the disk cache.
 
 Caches cannot detect an unannounced catalog change before the server starts. Servers whose discovery depends on unsupported client interactions or varies per connection may need to stay directly connected.
 
 Backend startup failure, malformed transport or a backend crash closes the connection. Operations are never automatically retried or replayed, and a lost REPL is not silently restarted.
+
+## Authentication
+
+The wrapper does not manage OAuth credentials, login sessions or a separate credential store. The host's existing environment and authentication arrangements remain responsible for credentials. HTTP/OAuth MCP connections are outside this wrapper and stay directly managed by the host.
+
+A cached catalog does **not** mean authentication has been checked. A stdio server can reject authentication when it first starts or when a tool is used. JSON-RPC initialization/discovery errors, including their codes and reasons, are returned to the host; normal tool errors are forwarded unchanged. Authentication failures and tool results are not cached, and operations are not automatically retried. A host's MCP status indicator may still report stdio authentication as unsupported rather than maintain a live signed-in indicator.
+
+Some native providers can also treat the wrapper as a different agent. In local Xcode verification, a direct workspace lookup succeeded where the wrapped connection was not approved. Keep the direct connection until the provider's approval flow has been verified; do not bypass its access checks.
+
+App-managed plugin identity, on-use authentication and hooks can be lost when converting a bundled MCP into a top-level registration. The wrapper does not make that conversion automatically; keep such connections unchanged unless host integration is verified.
 
 ## Lifetime and cleanup
 
@@ -124,6 +137,7 @@ cargo clippy --all-targets -- -D warnings
 cargo test --locked
 cargo build --locked
 python3 tests/test_e2e.py --binary target/debug/mcp-doze -v
+python3 tests/test_auto.py --binary target/debug/mcp-doze -v
 cargo build --release --locked
 ```
 

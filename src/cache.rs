@@ -334,6 +334,7 @@ mod tests {
                 cache_env: vec![],
                 fingerprints: vec![],
                 repl_cleanup: false,
+                auto_refresh: false,
                 timeout: Duration::from_secs(10),
             }
         }

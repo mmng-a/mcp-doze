@@ -26,3 +26,11 @@ No desktop windows, browser tabs or screenshots were operated during those compa
 - [MCP stdio transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports)
 - [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp)
 - [Codex app-server](https://learn.chatgpt.com/docs/app-server)
+
+## Automatic collection and authentication (0.1.1)
+
+Five additional tests cover automatic first collection, warm reuse, entrypoint updates, concurrent initialization, authorization rejection, and early EOF/TERM/SIGKILL recovery. A separate warm-cache test checks that initialization authorization errors reach the host with their code, reason and login URL and do not enter the cache. Manual mode remains strict.
+
+In isolated Codex checks, the installed legacy REPL worked through the wrapper from two working directories. Xcode workspace discovery worked in one context, but in another the wrapper received an agent-approval error while direct connection succeeded. Xcode was therefore left directly connected rather than changing its approvals. The error text was visible through the wrapper.
+
+A bundled Computer Use replacement retained tool names but lost its plugin provenance in host metadata (`pluginId` became null). On-use authentication and plugin hooks were not established as equivalent. App-managed plugin connections were kept unchanged.

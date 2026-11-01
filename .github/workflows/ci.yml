@@ -20,3 +20,4 @@ jobs:
       - run: cargo test --locked
       - run: cargo build --locked
       - run: python3 tests/test_e2e.py --binary target/debug/mcp-doze -v
+      - run: python3 tests/test_auto.py --binary target/debug/mcp-doze -v

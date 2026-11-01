@@ -80,6 +80,9 @@ def handle(request):
                capabilities=params.get("capabilities"), client_info=params.get("clientInfo"),
                meta=params.get("_meta"))
         time.sleep(control().get("initialize_delay", 0))
+        if error := control().get("initialize_error"):
+            send({"jsonrpc": "2.0", "id": request_id, "error": error})
+            return
         result(request_id, {"protocolVersion": params["protocolVersion"],
                             "capabilities": {"tools": {"listChanged": True},
                                              "resources": {"subscribe": True, "listChanged": True},
