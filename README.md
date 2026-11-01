@@ -1,19 +1,16 @@
 # mcp-doze
 
-Start a stdio MCP server on its first real operation. Keep it alive until the host disconnects.
+[English](README.md) | [日本語](README.ja.md)
 
-`mcp-doze` is a small Rust wrapper, not an MCP registry or gateway. Your existing MCP client remains the only configuration source. Each client connection gets its own backend process and state.
+Start local MCP servers on first use. Keep their state until the client disconnects.
 
-- Answer initialization and discovery from a private local cache.
-- Start the real server only when an operation needs it.
-- Preserve state across calls and turns; there is no idle timeout.
-- Forward requests, responses, notifications and unknown JSON fields in both directions.
-- Stop the owned process group on disconnect or termination.
-- No background daemon, shared backend or HTTP listener.
+MCP clients can start every configured stdio server just to discover its tools. `mcp-doze` keeps a local copy of that discovery information and answers those requests without keeping the real server running. The first operation starts the server; subsequent operations reuse it.
+
+`mcp-doze` is a Rust command wrapper. Your MCP client remains the source of configuration, credentials and approval policy. Each connection has its own backend and state.
 
 ## Install
 
-Requires Rust 1.85 or later. macOS is the primary tested platform; the process implementation uses Unix APIs. Windows is not supported.
+Requires Rust 1.85 or later to build. macOS is the tested platform; the implementation uses Unix APIs. Windows is not supported. The installed executable does not require Rust, Node.js or Python to run; the MCP server you wrap has its own requirements.
 
 ```sh
 git clone https://github.com/mmng-a/mcp-doze.git
@@ -21,113 +18,92 @@ cd mcp-doze
 cargo install --path . --locked
 ```
 
-The executable is `mcp-doze`. This repository does not install or modify any MCP configuration automatically.
+Homebrew distribution is being prepared. The [packaging guide](docs/homebrew.md) and [Formula template](packaging/homebrew/mcp-doze.rb.in) describe publication; a public tap is not available yet.
 
-## Use
+## Quick start
 
-Use `--auto-refresh` to collect missing or changed discovery information automatically. The first connection in a new working directory starts a short-lived collector, stops it, and then serves the cached catalog. Later connections stay cold until an operation. The collector is guarded by an ownership pipe so it also cleans up if the wrapper disappears.
-
-To prepare a cache explicitly instead, run from the **same working directory and environment** that the MCP client will use:
-
-```sh
-mcp-doze cache refresh -- python3 /absolute/path/to/server.py
-```
-
-Then wrap the existing command in your client's configuration. For example, in Codex's `config.toml`:
+Keep your existing server registration and put `mcp-doze run --auto-refresh --` before its command. For example, in Codex's `config.toml`:
 
 ```toml
 [mcp_servers.example]
 command = "/absolute/path/to/mcp-doze"
-args = ["run", "--auto-refresh", "--", "python3", "/absolute/path/to/server.py"]
+args = ["run", "--auto-refresh", "--", "node", "/absolute/path/to/server.mjs"]
 ```
 
-Keep the existing environment, working directory, approval settings and tool allowlists in the client configuration. There is no second server configuration file to maintain.
+Use `command -v mcp-doze` to find the installed path. Preserve the original environment, working directory, approval policy and tool allowlists. No second server registry is needed.
 
-```text
-client connection A → mcp-doze A → server A, started on demand
-client connection B → mcp-doze B → server B, started on demand
-```
+| When | What happens |
+| --- | --- |
+| Discovery cache is missing or outdated | A temporary server collects discovery metadata, then stops |
+| A connection asks for initialization or lists | doze replies from the cache |
+| The first operation arrives | doze starts the server and checks its discovery results |
+| Later operations arrive | The same server handles them; original JSON frames pass through |
+| The client releases the connection | doze stops the server's owned process group |
 
-Discovery metadata may be reused. Live servers, variables and browser state are never shared.
+The first connection in a new working directory may need to collect a cache. A cached tool list does not mean that authentication has been checked.
 
-### Commands and options
+## Commands
 
 ```text
 mcp-doze run [OPTIONS] -- COMMAND [ARG...]
 mcp-doze cache refresh [OPTIONS] -- COMMAND [ARG...]
 mcp-doze cache inspect [OPTIONS] -- COMMAND [ARG...]
+mcp-doze codex sync-plugins [--codex-home PATH]
 
+--auto-refresh         Collect missing or outdated discovery metadata automatically
 --cache-dir PATH       Override the cache directory
 --cache-env NAME       Include an environment variable in the cache identity; repeatable
---fingerprint PATH     Track an additional script or manifest; repeatable
---auto-refresh         Collect a missing or changed cache automatically
---repl-cleanup         Enable the verified REPL turn_ended acknowledgement while cold
---timeout-ms N         Initialization and I/O timeout, default 10000
+--fingerprint PATH     Track an extra script or manifest; repeatable
+--repl-cleanup         Acknowledge the verified turn_ended tool before server startup
+--timeout-ms N         Initialization and individual write timeout; default 10000
 ```
 
-Use the same cache context, cleanup policy and backend command for `refresh`, `inspect` and `run`. `--auto-refresh` only affects `run` and is not part of the cache identity. Arguments after `--` are passed directly to the real server; no shell is involved.
+Arguments after `--` go directly to the server without a shell. `--auto-refresh` affects `run` only. Without it, an unavailable cache produces an error and a refresh hint.
 
-The cache identity includes the executable, arguments, cwd, file argument metadata, explicit fingerprints, selected environment values and cleanup policy. Environment variables are inherited unchanged, but only variables named by `--cache-env` affect the cache key. Include variables that change the available tools or instructions. Their values are hashed into the identity and are not stored as plain text.
-
-If a server loads code that is not a file argument, add it with `--fingerprint`. Directory fingerprints identify the directory itself, not every file under it; use files or manifests to track code updates.
-
-### REPL cleanup notifications
-
-Some REPL servers expose a `turn_ended` tool that the host calls after each turn, even before the REPL is used. To avoid starting the server for that cleanup alone:
+To collect a cache explicitly, use the same command, working directory, environment and cache options as the client:
 
 ```sh
-mcp-doze cache refresh --repl-cleanup -- /absolute/path/to/repl-server
-mcp-doze run --repl-cleanup -- /absolute/path/to/repl-server
+mcp-doze cache refresh -- node /absolute/path/to/server.mjs
+mcp-doze cache inspect -- node /absolute/path/to/server.mjs
 ```
 
-This is an explicit opt-in for a verified input schema: three required, nonempty strings named `hook_event_name`, `session_id` and `turn_id`, with no extra arguments. Cache collection rejects a different schema. While cold, the wrapper returns the verified empty cleanup result. Once the server is running, cleanup calls go to the real server. `js_reset` is always a real operation.
+### Cache identity and storage
 
-## Cache and failure behavior
+The cache identity includes the executable, arguments, working directory, metadata for file arguments, explicit fingerprints, selected environment values and cleanup policy. Inherited environment variables are passed through unchanged. Only names supplied through `--cache-env` affect the cache key; select variables that change the catalog or instructions. Their values are hashed rather than stored in plain text.
 
-Cache collection starts the real server once, reads its initialization result and all supported discovery pages, stops the collector's process group, and atomically saves the result. It stores instructions, capabilities, tool schemas and resource/prompt listings, not execution results or runtime state.
+Use `--fingerprint` for code or manifests loaded indirectly. A directory fingerprint tracks the directory itself, not its contents.
 
-Default location:
+Default cache directories are `~/Library/Caches/mcp-doze` on macOS and `~/.cache/mcp-doze` on other Unix systems. `XDG_CACHE_HOME`, when set, takes precedence. Directories must be owned by the user with mode `0700`, and files with mode `0600`.
 
-- macOS: `~/Library/Caches/mcp-doze`
-- Other Unix systems: `~/.cache/mcp-doze`
-- With `XDG_CACHE_HOME`: `$XDG_CACHE_HOME/mcp-doze`
+### REPL cleanup
 
-Directories must be owned by the current user with mode `0700`; files must have mode `0600`. A missing, changed, corrupt or inaccessible cache produces an error with a refresh hint. Without `--auto-refresh`, it never falls back to eager startup. With that explicit option, a temporary collector obtains and saves discovery metadata, then stops; the long-lived backend is still started only on use.
-
-Before the first real operation, the wrapper checks the live server's initialization and complete discovery results against the snapshot. A mismatch invalidates the snapshot and stops before sending the operation. Live list-change notifications are forwarded and invalidate the disk cache.
-
-Caches cannot detect an unannounced catalog change before the server starts. Servers whose discovery depends on unsupported client interactions or varies per connection may need to stay directly connected.
-
-Backend startup failure, malformed transport or a backend crash closes the connection. Operations are never automatically retried or replayed, and a lost REPL is not silently restarted.
-
-## Authentication
-
-The wrapper does not manage OAuth credentials, login sessions or a separate credential store. The host's existing environment and authentication arrangements remain responsible for credentials. HTTP/OAuth MCP connections are outside this wrapper and stay directly managed by the host.
-
-A cached catalog does **not** mean authentication has been checked. A stdio server can reject authentication when it first starts or when a tool is used. JSON-RPC initialization/discovery errors, including their codes and reasons, are returned to the host; normal tool errors are forwarded unchanged. Authentication failures and tool results are not cached, and operations are not automatically retried. A host's MCP status indicator may still report stdio authentication as unsupported rather than maintain a live signed-in indicator.
-
-Some native providers treat the wrapper as a different agent. Xcode identifies the immediate parent of `mcpbridge` by its code signature. Sign the installed wrapper with a stable signing identity and identifier, then approve that agent through Xcode's normal flow:
+Some REPL hosts call a `turn_ended` tool even if the REPL has not been used. Add `--repl-cleanup` to avoid starting the server solely for that call:
 
 ```sh
-codesign --force --sign "YOUR_CODE_SIGNING_IDENTITY" \
-  --identifier io.github.mmng-a.mcp-doze --timestamp=none /absolute/path/to/mcp-doze
+mcp-doze run --auto-refresh --repl-cleanup -- /absolute/path/to/repl-server
 ```
 
-Use `security find-identity -v -p codesigning` to find an existing identity. Re-sign after replacing the binary, keeping the same identity and identifier. `XcodeListWorkspaces` can report an approval error without requesting access; `XcodeOpenWorkspace` requests access and, when allowed, opens the specified workspace. Use the workspace you intend to work on. For headless Xcode, inspect `xcrun mcp-server status` and approve the specific pending request through the official command. The wrapper does not change Xcode's approval database.
+This option requires the verified schema: exactly three required nonempty strings, `hook_event_name`, `session_id` and `turn_id`. A different schema is rejected. Before startup, doze returns the empty cleanup result; after startup, the real server handles cleanup. Reset operations always start the real server.
 
-## Codex plugin integration
+## Authentication and errors
 
-Keep MCPs inside their original plugins so Codex retains plugin identity, authentication policy, skills and hooks. Do not move bundled servers to top-level MCP registrations. To wrap installed plugin launch definitions in place:
+Credentials stay with the MCP client, the server or the provider's existing credential store. doze has no credential store and does not perform OAuth login. HTTP MCP connections remain outside this wrapper.
+
+Initialization/discovery errors are returned to the client with their error codes and details. Tool errors are forwarded unchanged. Authentication errors and execution results are not cached. The client decides how to display an error or login prompt.
+
+Before forwarding the first operation, doze compares the live initialization and catalog with the cache. A mismatch invalidates the cache and closes the connection before executing the operation. A server crash or malformed transport also closes the connection. Operations are never automatically retried, and a lost REPL is not silently restarted.
+
+## Codex plugins
+
+Wrap bundled MCPs inside their original plugins to retain plugin identity, authentication policy, skills and hook definitions:
 
 ```sh
 mcp-doze codex sync-plugins
-# For a different Codex home:
-mcp-doze codex sync-plugins --codex-home /absolute/path/to/codex-home
 ```
 
-This explicit command scans `plugins/cache/<marketplace>/<plugin>/<version>/.mcp.json` under `CODEX_HOME` (default `~/.codex`). It changes only `command` and `args` for enabled stdio definitions, preserving every other field. HTTP and explicitly disabled servers are left alone. CUA receives the verified `--repl-cleanup` policy. Existing wrapped definitions are unchanged. Private backups are written under `backups/mcp-doze/plugins` in the same Codex home; they are never loaded as configuration. No registration list is maintained by doze.
+This opt-in command scans `plugins/cache/<marketplace>/<plugin>/<version>/.mcp.json` under `CODEX_HOME`, defaulting to `~/.codex`. It changes only `command` and `args` for stdio definitions that are not explicitly disabled. HTTP definitions and already wrapped servers are unchanged. CUA receives `--repl-cleanup`. Private backups go to `backups/mcp-doze/plugins` in the same Codex home.
 
-Run synchronization before starting Codex, including after plugin updates. A small launcher earlier on `PATH` can make this automatic:
+The command edits downloaded plugin caches, rather than using an official Codex transport override. Plugin updates can replace those files. Run it before starting Codex to reapply wrapping. A launcher earlier on `PATH` can do this automatically:
 
 ```sh
 #!/bin/sh
@@ -136,26 +112,30 @@ set -eu
 exec /absolute/path/to/the/real/codex "$@"
 ```
 
-Use distinct paths for this launcher and the real Codex binary. Synchronization errors stop the launcher with a diagnostic rather than silently starting eager backends. Plugin installation or updates can replace cached definitions; synchronization reapplies wrapping on the next launch. An already running Codex app-server can retain old launch definitions, so existing connections remain in effect until that server exits. The integration does not restart it or interrupt existing work.
+The launcher and real Codex binary must have different paths. Synchronization failures stop the launcher with an error. An existing Codex app-server can retain old launch definitions until it exits; doze does not restart it or interrupt ongoing work.
 
-## Lifetime and cleanup
+## Xcode
 
-The connection owns a dedicated process group. The backend inherits that group, including ordinary child processes. EOF, SIGTERM, SIGINT, SIGHUP, output failure or an unrecoverable error starts cleanup. The wrapper closes backend input, sends TERM, then KILL after a two-second grace period. Final group KILL intentionally includes the wrapper itself; a used wrapper can therefore exit by signal during normal disconnect.
+Xcode identifies the agent that starts `mcpbridge` by its immediate parent's code signature. Approve doze as a separate agent through Xcode's normal flow. To retain that identity across upgrades, sign the installed binary with the same signing identity and identifier each time:
 
-A turn finishing does not stop the backend. The host must actually release the MCP connection. A terminal closing may not immediately release every connection in a shared app server. Parent/subagent cleanup decisions remain the host's responsibility.
+```sh
+security find-identity -v -p codesigning
+codesign --force --sign "YOUR_CODE_SIGNING_IDENTITY" \
+  --identifier io.github.mmng-a.mcp-doze --timestamp=none /absolute/path/to/mcp-doze
+```
 
-Processes that deliberately detach with `setsid()`, already-running applications and external services are outside the owned group. Killing only the wrapper with uncatchable SIGKILL cannot run its cleanup. The wrapper never finds and kills applications by name.
+`XcodeListWorkspaces` can report an approval error without requesting access. `XcodeOpenWorkspace` requests access and opens the specified workspace when approved. For headless Xcode, inspect `xcrun mcp-server status` and approve the relevant pending request using Xcode's official command. doze does not modify Xcode's approval database.
 
-## Limits and compatibility
+## Lifecycle and compatibility
 
-- Local stdio JSON-RPC only; no HTTP/SSE/OAuth proxy or server aggregation.
-- Maximum frame size: 64 MiB. Pending startup input is also limited to 64 MiB; bounded I/O channels can hold additional frames.
-- Startup and individual writes have a timeout. The host's tool timeout also includes lazy startup time.
-- Discovery must be cacheable; not every MCP server has a stable catalog.
-- Reconnecting or reloading MCP settings creates a new backend and loses its previous state.
-- Bundled plugin servers must be wrapped through supported host configuration. Editing a downloaded plugin cache is not supported.
-
-The repository's test suite uses local fixtures and never operates desktop applications. Native REPL/Computer Use and isolated Codex checks are described in [validation](docs/validation.md); full desktop interaction and automatic plugin migration are not claimed.
+- One backend per connection. No shared backend, resident daemon or idle timeout.
+- A turn ending does not stop the backend. The host must release its MCP connection; closing a terminal may leave connections in a shared app-server.
+- EOF, termination signals and unrecoverable errors trigger cleanup: close server input, send TERM, then KILL after two seconds. Final group KILL includes doze itself, so a used wrapper can exit by signal during normal cleanup.
+- Detached processes, existing applications and external services are outside the owned group. Killing only doze with uncatchable SIGKILL can leave the running backend behind.
+- Local stdio JSON-RPC only. Current discovery uses the `initialize` handshake; the `2026-07-28` `server/discover` flow is not implemented.
+- Discovery must be cacheable. Connection-dependent catalogs or interactive discovery need separate compatibility work.
+- Maximum frame size and queued startup input: 64 MiB each. Bounded I/O channels can hold additional frames.
+- The host's tool timeout must allow for lazy server startup. Reconnecting creates a new backend and loses its previous state.
 
 ## Development
 
@@ -163,15 +143,11 @@ The repository's test suite uses local fixtures and never operates desktop appli
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test --locked
-cargo build --locked
-python3 tests/test_e2e.py --binary target/debug/mcp-doze -v
-python3 tests/test_auto.py --binary target/debug/mcp-doze -v
-python3 tests/test_codex.py --binary target/debug/mcp-doze -v
 cargo build --release --locked
 ```
 
-The end-to-end suite owns and cleans only its temporary process groups. It checks lazy discovery, state reuse and isolation, reverse requests, cancellation, metadata and media forwarding, cache invalidation, crashes and TERM-resistant descendants.
+Tests use Rust and local MCP fixtures. They do not require Python, external services or desktop applications. See [design](docs/design.md) and [validation](docs/validation.md) for implementation boundaries and compatibility evidence.
 
 ## License
 
-MIT. The implementation is independent Rust code. [lazy-mcp-wrapper](https://github.com/sleticalboy/lazy-mcp-wrapper) was a design reference; no shared daemon or idle shutdown is used.
+[MIT](LICENSE). Independent Rust implementation, with [lazy-mcp-wrapper](https://github.com/sleticalboy/lazy-mcp-wrapper) as a design reference.

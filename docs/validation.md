@@ -1,44 +1,53 @@
 # Validation
 
-The automated suite uses Python standard-library MCP fixtures. `cargo test` covers cache protection and collector cleanup. `tests/test_e2e.py` exercises the executable through its public CLI.
+## Automated tests
 
-Native compatibility was investigated on Apple Silicon macOS with Codex CLI/app-server 0.166.0 and the installed NodeREPL/Unified Computer Use runtime. The initial Rust protocol prototype demonstrated:
+`cargo test --locked` runs the unit and integration suites. The test client, MCP fixture and process-lifecycle checks are written in Rust, using the project's existing dependencies. No Python runtime, desktop application, credentials or external service is required.
 
-- Discovery and unused cleanup without launching the real MCP.
-- JavaScript state reuse across calls and turn-end cleanup.
-- Explicit reset, including reinitialization of the Computer Use API object.
-- Separate state for separate connections and survival of the other connection after one closes.
-- Isolated real Codex discovery, first JavaScript operation and archive-triggered group cleanup.
+The fixture is a Cargo example at `tests/support/fixture.rs`. Cargo builds it for the tests, but normal `cargo install` does not install it. Integration tests exercise the public executable rather than importing the relay implementation.
 
-The production `mcp-doze` release build was then checked on 2026-11-01 against both installed REPL variants. For each variant, all five native checks passed: cold discovery/unused cleanup, state/turn-end/reset, real Codex cold discovery, real Codex first JavaScript use, and archive recovery of the owned group. No active MCP configuration was changed.
+The suite covers:
 
-Latest cold physical-footprint samples were 1.563 MiB for the legacy-REPL launch definition and 1.641 MiB for the Unified Computer Use launch definition. These measurements cover the wrapper while its backend is absent, not memory while executing tools. They are observations on that machine, not guaranteed limits.
+- Cached initialization, paginated discovery and unused cleanup without starting a backend.
+- Independent state per connection, state reuse, negotiated protocol versions and operation cancellation.
+- Bidirectional requests, media, resource access, prompts, unknown methods and JSON extension fields.
+- Cache permissions, symlink rejection, launch changes and live catalog mismatches.
+- Authentication error codes, reasons and login URLs reaching the client without entering the cache.
+- Automatic collection, concurrent cache creation and warm-cache reuse.
+- EOF, TERM and collector-owner SIGKILL, including descendants that ignore TERM.
+- Backend failure without automatic replay or restart.
+- Codex plugin wrapping, metadata preservation, update handling, private backups and existing-file protection.
 
-The initial debug prototype had measured about 1.4 MiB while cold; production results above supersede that historical figure.
+Tests inspect and terminate only the temporary process groups they create. They do not change a user's active MCP configuration or installed plugin manifests.
 
-An isolated Codex lifecycle probe also observed distinct MCP process groups per thread, release on archive/unload, and stdin EOF when the app server crashed. It did not establish that closing a parent terminal releases every subagent connection.
+## Native compatibility snapshot
 
-No desktop windows, browser tabs or screenshots were operated during those compatibility checks. Full graphical interaction, the host's app-managed plugin registration path, and cross-version compatibility require their own validation. No user's active MCP configuration is changed by the repository tests.
+The following checks were performed on Apple Silicon macOS on 2026-11-01 with Codex CLI/app-server 0.166.0 and the installed NodeREPL/Unified Computer Use runtime. They are a compatibility snapshot, not a guarantee for later host or plugin versions.
+
+| Component | Verified behavior |
+| --- | --- |
+| Legacy REPL and Unified Computer Use REPL | Cold discovery, unused cleanup, JavaScript execution, state reuse, reset and connection isolation |
+| Codex lifecycle | Cold discovery, first use and process-group cleanup after archive/unload |
+| Unified Computer Use plugin | Original plugin identity and ON_INSTALL policy retained; harmless JavaScript worked through doze |
+| Data Analytics plugin | Original plugin identity and ON_USE policy retained; bundled workflow search worked through doze |
+| Creative Production plugin | Original plugin identity and ON_USE policy retained; bundled UI resource read worked through doze |
+| Xcode | After signing and approving doze, workspace listing worked through Codex from two working directories |
+
+For the plugin checks, all three real backends remained stopped after discovery, started only on their first operation, and were recovered after closing the isolated test connections. Plugin hook definitions were unchanged, and the host's visible hook set matched its baseline. This does not establish every hook's execution behavior.
+
+No desktop windows, browser tabs or screenshots were operated during these checks. Full graphical interaction and future host-version compatibility need separate validation. Closing a parent terminal was not established to release every subagent connection.
+
+## Memory observations
+
+Cold release-build physical-footprint samples were 1.563 MiB for the legacy REPL launch definition and 1.641 MiB for Unified Computer Use. These measure doze while its backend is absent on the tested Mac. They do not measure memory while executing tools and are not guaranteed limits.
+
+## Homebrew preparation
+
+The Formula is a template for a future tagged source archive. Syntax and its local installation-test logic can be checked before publication. A complete `brew install` test still requires the real release URL and SHA-256, so it is a separate publication step in the [Homebrew guide](homebrew.md).
 
 ## References
 
-- [MCP lifecycle and stdio shutdown](https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle)
+- [MCP lifecycle and shutdown](https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle)
 - [MCP stdio transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports)
 - [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp)
 - [Codex app-server](https://learn.chatgpt.com/docs/app-server)
-
-## Automatic collection and authentication (0.1.1)
-
-Five additional tests cover automatic first collection, warm reuse, entrypoint updates, concurrent initialization, authorization rejection, and early EOF/TERM/SIGKILL recovery. A separate warm-cache test checks that initialization authorization errors reach the host with their code, reason and login URL and do not enter the cache. Manual mode remains strict.
-
-In isolated Codex checks, the installed legacy REPL worked through the wrapper from two working directories. Xcode workspace discovery worked in one context, but in another the wrapper received an agent-approval error while direct connection succeeded. Xcode was therefore left directly connected rather than changing its approvals. The error text was visible through the wrapper.
-
-A bundled Computer Use replacement retained tool names but lost its plugin provenance in host metadata (`pluginId` became null). On-use authentication and plugin hooks were not established as equivalent. App-managed plugin connections were kept unchanged.
-
-## Plugin transport integration and Xcode approval (0.1.2)
-
-The Codex synchronization tests check metadata preservation, unchanged HTTP/disabled entries, idempotence, new plugin versions, private backups and rejection of symlink manifests before writes. The adapter changes transport command/arguments inside the installed plugin rather than adding top-level MCP registrations.
-
-In an independent Codex app-server with the existing plugin installations, Unified Computer Use, Data Analytics and Creative Production retained their plugin identifiers and ON_INSTALL/ON_USE authentication policies. All three real backends stayed stopped after catalog discovery. Harmless JavaScript, a bundled Data workflow search, and reading Creative Production's bundled UI resource each started the corresponding backend on first use and returned successfully. Owned processes stopped after archiving the test thread and closing its isolated app-server. Plugin hook definitions were unchanged; the host's visible hook set matched its baseline.
-
-Xcode identifies the immediate parent of `mcpbridge` by its signature. After signing doze with a stable identifier and approving that agent through Xcode's official flow, read-only workspace listing succeeded through Codex from both tested working directories. No real workspace was opened. Reinstalling the wrapper requires reapplying the same signing identity.

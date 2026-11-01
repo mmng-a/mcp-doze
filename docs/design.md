@@ -1,6 +1,6 @@
 # Design
 
-The MCP client is the only server configuration source. Its existing command becomes `mcp-doze run -- <original command> <original arguments>`. The environment and working directory continue to come from that client. This project does not own a server registry, synchronize configuration, or aggregate multiple MCP servers behind one endpoint.
+The MCP client is the only server configuration source. Its existing command becomes `mcp-doze run -- <original command> <original arguments>`. The environment and working directory continue to come from that client. This project does not own a server registry or aggregate multiple MCP servers behind one endpoint. The optional Codex adapter wraps launch definitions in the existing plugin manifests without moving their registrations.
 
 ## States
 
@@ -21,7 +21,7 @@ Cache refresh uses a separate backend group so its command can return after coll
 
 ## Deliberate boundaries
 
-There is no idle timeout, shared backend, transparent recovery after lost state, HTTP transport, client configuration manager or automatic migration of app-managed plugins. Unknown methods are forwarded when needed; only explicitly understood cold control traffic is handled locally.
+There is no idle timeout, shared backend, transparent recovery after lost state, HTTP transport or independent client configuration store. Unknown methods are forwarded when needed; only explicitly understood cold control traffic is handled locally.
 
 Discovery collection advertises no optional client capabilities and cannot satisfy interactive client requests other than ping. A server requiring those interactions for discovery should remain directly connected until that integration is implemented and verified.
 
