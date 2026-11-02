@@ -23,4 +23,4 @@ brew update
 brew upgrade mmng-a/tap/mcp-doze
 ```
 
-Installation does not change MCP client configuration. See the project's [English README](https://github.com/mmng-a/mcp-doze#readme) or [日本語README](https://github.com/mmng-a/mcp-doze/blob/main/README.ja.md) for setup and Xcode approval instructions.
+Installation does not change MCP client configuration. See the project's [English README](https://github.com/mmng-a/mcp-doze#readme) or [日本語README](https://github.com/mmng-a/mcp-doze/blob/main/README.ja.md) for setup instructions.

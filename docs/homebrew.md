@@ -82,7 +82,6 @@ The examples below use `0.1.3` as a future version, following the initial `0.1.2
 
 - `brew update` retrieves Formula changes; `brew upgrade mmng-a/tap/mcp-doze` installs a newer version once the Formula is updated.
 - Homebrew installation does not rewrite MCP registrations or Codex launchers. Update absolute paths intentionally if switching from a Cargo installation.
-- Xcode's agent approval is separate from Homebrew installation. Reapply any local signing identity after an upgrade as described in the [README](../README.md#xcode).
 - The Formula does not install a background service, modify plugin manifests during installation or configure an MCP client. Plugin wrapping remains an explicit `mcp-doze codex sync-plugins` operation.
 
 ## References
