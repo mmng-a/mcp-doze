@@ -28,11 +28,11 @@ Update an existing MCP registration to launch its server through mcp-doze. For a
 
 ```toml
 [mcp_servers.example]
-command = "/absolute/path/to/mcp-doze"
+command = "mcp-doze"
 args = ["run", "--auto-refresh", "--", "node", "/absolute/path/to/server.mjs"]
 ```
 
-Find the mcp-doze path with `command -v mcp-doze`. Keep the original environment, working directory, approval policy and tool allowlists.
+If the MCP client cannot find `mcp-doze` because its `PATH` does not include Homebrew's bin directory, set `command` to the absolute path returned by `command -v mcp-doze` in your terminal. Keep the original environment, working directory, approval policy and tool allowlists.
 
 ## Codex plugins
 

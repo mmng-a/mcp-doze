@@ -28,11 +28,11 @@ brew install mmng-a/tap/mcp-doze
 
 ```toml
 [mcp_servers.example]
-command = "/absolute/path/to/mcp-doze"
+command = "mcp-doze"
 args = ["run", "--auto-refresh", "--", "node", "/absolute/path/to/server.mjs"]
 ```
 
-mcp-dozeのインストール先は`command -v mcp-doze`で確認できます。元の環境変数・作業ディレクトリ・承認方針・ツール許可リストは変更せず、起動コマンドと引数を上の形式に置き換えてください。
+MCPクライアントの`PATH`にHomebrewのbinディレクトリが含まれず、`mcp-doze`が見つからない場合は、ターミナルで`command -v mcp-doze`を実行し、表示された絶対パスを`command`に指定してください。元の環境変数・作業ディレクトリ・承認方針・ツール許可リストは変更せず、起動コマンドと引数を上の形式に置き換えてください。
 
 ## Codexプラグイン
 
