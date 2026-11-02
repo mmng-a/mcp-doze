@@ -39,7 +39,38 @@ No desktop windows, browser tabs or screenshots were operated during these check
 
 ## Memory observations
 
-Cold release-build physical-footprint samples were 1.563 MiB for the legacy REPL launch definition and 1.641 MiB for Unified Computer Use. These measure doze while its backend is absent on the tested Mac. They do not measure memory while executing tools and are not guaranteed limits.
+The following historical samples were collected on one Apple Silicon Mac. Dates and times below are JST. They describe the measured builds and installed runtimes at those times; they have not been rerun for every release.
+
+### Existing server processes, 2026-10-31 22:37
+
+A snapshot of a Codex environment with many retained threads counted these processes and summed their physical footprints:
+
+| Component | Processes | Total footprint |
+| --- | ---: | ---: |
+| Legacy Node REPL | 62 | 584.5 MiB |
+| Unified Computer Use launcher | 62 | 979.7 MiB |
+| Unified Computer Use REPL child | 62 | 565.1 MiB |
+
+The Unified Computer Use launcher and child totals add to 1,544.8 MiB. The README rounds the legacy REPL and combined Computer Use totals to approximately 585 MiB and 1,545 MiB. The snapshot did not establish that every process was unused or match every process to an individual thread. It is context for the cost of retaining many server instances, not a measured saving from doze.
+
+### Cold release-build wrapper, 2026-11-01 01:23
+
+An isolated native compatibility probe used a release build of mcp-doze with Codex CLI/app-server 0.166.0 and the installed legacy Node REPL and Unified Computer Use runtimes. After initialization, discovery and unused cleanup, the probe confirmed that the owned process group contained only mcp-doze and sampled its footprint:
+
+| Launch definition | mcp-doze processes | Backend processes | Wrapper footprint |
+| --- | ---: | ---: | ---: |
+| Legacy Node REPL | 1 | 0 | 1.563 MiB |
+| Unified Computer Use | 1 | 0 | 1.641 MiB |
+
+Each row is a single observed sample, not an average, a peak or a guaranteed limit. The figures exclude backend startup, cache collection and tool execution. The same probe separately verified first use, state reuse, reset and cleanup; it did not record a memory comparison during tool execution.
+
+### Method and interpretation
+
+Both measurements read `ri_phys_footprint` through macOS `proc_pid_rusage` and converted bytes to MiB by dividing by 1,048,576. The existing-server snapshot summed the selected component processes; the cold probe measured one wrapper process per launch definition.
+
+Physical footprint accounts for compressed and swapped memory as well as noncompressed dirty memory, so it differs from RSS and from the amount of physical RAM that would be freed by stopping a process. See [Apple's explanation of memory footprint](https://developer.apple.com/documentation/xcode/analyzing-the-memory-usage-of-your-metal-app).
+
+The snapshots have different process counts, ages and workloads and are not a controlled before/after benchmark. They do not establish a percentage reduction, CPU or energy savings, or a change in system-wide memory pressure or swap use. Once a backend starts, total memory use includes both the wrapper and that backend, which stays running until the client releases the connection. Actual savings depend on the workload and how many backends remain unused.
 
 ## Homebrew distribution
 

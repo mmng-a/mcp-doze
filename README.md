@@ -8,6 +8,24 @@ When several local MCP servers are configured, `mcp-doze` keeps unused servers f
 
 Once started, the same server handles later operations and keeps its state until the client disconnects. Add `mcp-doze` before an existing server command to use it.
 
+## Memory observations
+
+**About 1.6 MiB per connection before the backend starts**, in two local release-build samples:
+
+| Launch definition | mcp-doze footprint, backend not started |
+| --- | ---: |
+| Legacy Node REPL | 1.563 MiB |
+| Unified Computer Use | 1.641 MiB |
+
+For context, an earlier snapshot of the same Mac with many Codex threads had these server processes running:
+
+| Component | Observed processes | Total footprint |
+| --- | --- | ---: |
+| Legacy Node REPL | 62 server processes | ≈585 MiB |
+| Unified Computer Use | 62 launchers + 62 REPL children | ≈1,545 MiB |
+
+These observations were collected on Apple Silicon macOS on 2026-10-31 and 2026-11-01 (JST), using macOS physical footprint rather than RSS. The snapshots have different process counts, ages and workloads; a controlled before/after comparison has not been performed. Once a tool starts its backend, total memory use includes both mcp-doze and that backend. Savings depend on how many servers remain unused. See [measurement conditions and exact readings](docs/validation.md#memory-observations).
+
 ## Example
 
 ```diff
