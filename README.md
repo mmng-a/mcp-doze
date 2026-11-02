@@ -44,7 +44,7 @@ mcp-doze codex sync-plugins
 
 This changes launch definitions inside the original plugins while preserving their identity, authentication policy, skills and hook definitions. Plugin updates may replace those definitions, so run it again before startup. See the [integration details](docs/usage.md#codex-plugins).
 
-## Behavior and compatibility
+## Notes
 
 - Local stdio MCP connections only. HTTP connections are outside the wrapper.
 - A missing or outdated cache temporarily starts the real server to collect discovery metadata.
