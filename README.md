@@ -2,7 +2,7 @@
 
 [English](README.md) | [日本語](README.ja.md)
 
-**Start local MCP servers when you need them.**
+**Reduce resource usage from unused MCP servers.**
 
 When several local MCP servers are configured, `mcp-doze` keeps unused servers from running in the background. It serves tool lists from a cache and starts the real server when an operation arrives.
 
