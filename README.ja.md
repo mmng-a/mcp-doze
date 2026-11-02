@@ -2,17 +2,30 @@
 
 [English](README.md) | [日本語](README.ja.md)
 
-ローカルMCPサーバーを初回使用時に起動し、クライアントが接続を解放するまで状態を保持します。
+**ローカルMCPサーバーを、使うときに起動。**
 
-MCPクライアントは、ツール一覧を取得するために、登録されたstdioサーバーを起動することがあります。`mcp-doze`は取得済みの一覧をローカルに保存し、実サーバーを常駐させずに一覧取得へ応答します。実際の操作が届いた時点でサーバーを起動し、以降は同じプロセスを使います。
+MCPサーバーをいくつも登録している環境で、使わないローカルサーバーの常駐を減らします。`mcp-doze`はツール一覧をキャッシュから返し、実際の操作が届いたときにサーバーを起動するコマンドラッパーです。
 
-`mcp-doze`はRust製のコマンドラッパーです。起動設定・認証情報・承認方針は既存のMCPクライアントで管理します。接続ごとにサーバープロセスと状態を分離します。
+起動後は同じプロセスを使い、クライアントの接続が閉じるまで状態を保持します。既存の起動コマンドの前に挟んで使えます。
+
+## 起動コマンドの変更例
+
+```diff
+-node /absolute/path/to/server.mjs
++mcp-doze run --auto-refresh -- node /absolute/path/to/server.mjs
+```
+
+サーバーは既存のMCPクライアントに登録したまま使えます。起動設定・認証情報・承認方針も、そのクライアントで管理します。
 
 ## インストール
 
 ### Homebrew（macOS）
 
+Homebrew 7以降では、tapを追加し、mcp-dozeのFormulaを信頼対象として登録してからインストールします。
+
 ```sh
+brew tap mmng-a/tap
+brew trust --formula mmng-a/tap/mcp-doze
 brew install mmng-a/tap/mcp-doze
 ```
 
@@ -146,6 +159,8 @@ codesign --force --sign "YOUR_CODE_SIGNING_IDENTITY" \
 - ホスト側のツール制限時間には、遅延起動にかかる時間も含まれます。再接続では新しいサーバーを起動し、以前の状態は失われます。
 
 ## 開発
+
+`mcp-doze`はRustで実装しています。接続ごとにサーバープロセスと状態を分離します。
 
 ```sh
 cargo fmt --check

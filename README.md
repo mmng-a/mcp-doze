@@ -2,17 +2,30 @@
 
 [English](README.md) | [日本語](README.ja.md)
 
-Start local MCP servers on first use. Keep their state until the client disconnects.
+**Start local MCP servers when you need them.**
 
-MCP clients can start every configured stdio server just to discover its tools. `mcp-doze` keeps a local copy of that discovery information and answers those requests without keeping the real server running. The first operation starts the server; subsequent operations reuse it.
+When several local MCP servers are configured, `mcp-doze` keeps unused servers from running in the background. It serves tool lists from a cache and starts the real server when an operation arrives.
 
-`mcp-doze` is a Rust command wrapper. Your MCP client remains the source of configuration, credentials and approval policy. Each connection has its own backend and state.
+Once started, the same server handles later operations and keeps its state until the client disconnects. Add `mcp-doze` before an existing server command to use it.
+
+## Example
+
+```diff
+-node /absolute/path/to/server.mjs
++mcp-doze run --auto-refresh -- node /absolute/path/to/server.mjs
+```
+
+Keep the server registered in your MCP client. Configuration, credentials and approval policy remain with the client.
 
 ## Install
 
 ### Homebrew (macOS)
 
+With Homebrew 7 or later, add the tap and trust the mcp-doze Formula before installing:
+
 ```sh
+brew tap mmng-a/tap
+brew trust --formula mmng-a/tap/mcp-doze
 brew install mmng-a/tap/mcp-doze
 ```
 
@@ -146,6 +159,8 @@ codesign --force --sign "YOUR_CODE_SIGNING_IDENTITY" \
 - The host's tool timeout must allow for lazy server startup. Reconnecting creates a new backend and loses its previous state.
 
 ## Development
+
+`mcp-doze` is implemented in Rust. Each connection has its own server process and state.
 
 ```sh
 cargo fmt --check
